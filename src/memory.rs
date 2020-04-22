@@ -1,5 +1,6 @@
 use std::ops::{Index, IndexMut};
 
+#[derive(Debug)]
 pub struct Memory {
     pub membuffer: Vec<u8>,
 }

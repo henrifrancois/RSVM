@@ -1,0 +1,10 @@
+step()
+    fetch() -> instruction0         // 0x10
+        set_register(ip, +1)        // ip = 1
+    execute(instruction0)           // 0x10
+        fetch16() -> instruction3   // 0x1234
+            fetch() -> instruction1 // 0x12
+                set_register(ip, +1)// ip = 2
+            fetch() -> instruction2 // 0x34
+                set_register(ip, +1)// ip = 3
+        set_register(r1, instruction3)  // r1 = 0x1234

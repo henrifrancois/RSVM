@@ -23,10 +23,10 @@ pub struct CPU {
 
 
 impl CPU {
-    pub fn new(memoryItem: Memory) -> Self {
+    pub fn new(memory_item: Memory) -> Self {
         let mut aggr: HashMap<&'static str, u8> = HashMap::new();
-        let memsize = REGISTERS.to_vec().len() * 2;
         let mut offsets: Vec<u8> = Vec::new();
+        let memsize = REGISTERS.to_vec().len() * 2;
         for i in 0..REGISTERS.to_vec().len() + 1 {
             offsets.push(i as u8 * 2);
         }
@@ -35,7 +35,7 @@ impl CPU {
             aggr.insert(*mapping.0, *mapping.1);
         }
         CPU {
-            memory: memoryItem,
+            memory: memory_item,
             register_names: REGISTERS.to_vec(),
             registers: Memory::new(memsize),
             reg_map: aggr,
@@ -44,13 +44,13 @@ impl CPU {
 
     fn get_register(&self, name: &str) -> Result<u16, CPUError> {
         match self.reg_map.get(name) {
-            Some(value) => {
-                let register_value = *value as usize;       
-                // here we have value = the offset from the start of the reg_map
+            Some(address_ref) => {
+                // here we have address_ref = the offset from the start of the reg_map
+                let register_start_address = *address_ref as usize;       
                 // we can enter this offset into the registers array to get the data present there
-                let byte0 = self.registers[register_value];
-                let byte1 = self.registers[register_value+1];
-                let register = ((byte0 as u16) << 8) | byte1 as u16;
+                let byte0 = self.registers[register_start_address];
+                let byte1 = self.registers[register_start_address + 1];
+                let register = ((byte1 as u16) << 8) | byte0 as u16;
                 Ok(register)
             }
             None => {
@@ -61,14 +61,15 @@ impl CPU {
 
     fn set_register(&mut self, name: &str, value: u16) -> Result<(), CPUError> {
         match self.reg_map.get(name) {
-            Some(reg) => {
-                println!("Value to be set: 0x{:04x}", value);
-                let [byte0, byte1]: [u8; 2] = value.to_be_bytes();
-                println!("Pieces of value: 0x{:04x}, 0x{:04x}", byte0, byte1);
-                self.registers[(*reg) as usize] = byte0;
-                self.registers[(*reg) as usize + 1] = byte1;
-                // We have the offset which is captured by the offhand `reg` variable.
+            Some(address_ref) => {
+                println!("Value: 0x{:04x}", value);
+                // the value being set is 16 bits long, while each entry in our registers array is 8 bits long
+                // as each register spans two 8 bit values, we need to break down our 16 bit value into two 8 bit values.
+                let [byte0, byte1]: [u8; 2] = value.to_ne_bytes();
+                // We have the offset which is captured by the offhand `address_ref` variable.
                 // The value can now be entered into this register by simple assignment
+                self.registers[(*address_ref) as usize] = byte0;
+                self.registers[(*address_ref) as usize + 1] = byte1;
                 Ok(())
             }
             None => {
@@ -84,11 +85,9 @@ impl CPU {
         match instruction_addr {
             Ok(address) => {
                 // We retrieve the first byte of the given address
-                let [byte0, byte1]: [u8; 2] = address.to_be_bytes();
-                println!("fetch() address: 0x{:04x}\tbytes: 0x{:04x}", address, byte0);
+                let [byte0, _byte1]: [u8; 2] = address.to_ne_bytes();
                 let instruction = self.memory[byte0 as usize];
-                self.set_register("ip", address + 1);
-                
+                self.set_register("ip", address + 1).unwrap();
                 Ok(instruction)
             }
             Err(_) => Err(CPUError::FetchFailure)
@@ -98,24 +97,27 @@ impl CPU {
     pub fn fetch16(&mut self) -> Result<u16, CPUError> {
         // fetch16 looks into the Instruction Pointer's address and from there, 
         // gets the value in the pointed to register.
-        let instruction_addr = self.get_register("ip");
-        match instruction_addr{
-            Ok(address) => {
-                println!("Address of IP: 0x{:04x}", address);
-                let [byte0, byte1]: [u8; 2] = address.to_be_bytes();
-
-                let inst0 = self.memory[byte0 as usize];
-                let inst1 = self.memory[byte1 as usize];
-
-                println!("Instructions -> 1: 0x{:04x}\t2: 0x{:04x}", inst0, inst1);
-                 
-                let instruction = ((inst0 as u16) << 8) | inst1 as u16;
-
-                self.set_register("ip", address + 2);
-                println!("New address of IP: 0x{:04x}", self.get_register("ip").unwrap());
-                Ok(instruction)
+        let first_inst = self.fetch();
+        match first_inst {
+            Ok(instruction0) =>  {
+                let inst0 = instruction0;
+                let second_inst = self.fetch();
+                match second_inst {
+                    Ok(instruction1) => {
+                        let inst1 = instruction1;
+                        println!("First instruction: 0x{:04x}", inst0);
+                        println!("Second instruction: 0x{:04x}", inst1);
+                        let instruction = ((inst0 as u16) << 8) | inst1 as u16;
+                        Ok(instruction)
+                    },
+                    Err(_) => {
+                        Err(CPUError::FetchFailure)
+                    }
+                }
+            },
+            Err(_) => {
+                Err(CPUError::FetchFailure)
             }
-            Err(_) => Err(CPUError::FetchFailure)
         }
     }
 
@@ -126,8 +128,7 @@ impl CPU {
                 let literal = self.fetch16();
                 match literal {
                     Ok(literal) => {
-                        println!("Value of literal: 0x{:04x}", literal);
-                        self.set_register("r1", literal);
+                        self.set_register("r1", literal).unwrap();
                         Ok(())
                     }
                     Err(_) => Err(CPUError::ExecutionFailure)
@@ -137,7 +138,7 @@ impl CPU {
                 let literal = self.fetch16();
                 match literal {
                     Ok(literal) => {
-                        self.set_register("r2", literal);
+                        self.set_register("r2", literal).unwrap();
                         Ok(())
                     }
                     Err(_) => Err(CPUError::ExecutionFailure)
@@ -146,15 +147,15 @@ impl CPU {
             ADD_REG_REG => {
                 let r1 = self.fetch().unwrap();
                 let r2 = self.fetch().unwrap();
-                let reg_val0A = self.registers[r1 as usize * 2];
-                let reg_val0B = self.registers[(r1 as usize + 1) * 2];
-                let reg_val0  = ((reg_val0A as u16) << 8) | reg_val0B as u16;
+                let reg_val_a0 = self.registers[r1 as usize * 2];
+                let reg_val_b0 = self.registers[(r1 as usize * 2) + 1];
+                let reg_val0  = ((reg_val_b0 as u16) << 8) | reg_val_a0 as u16;
 
-                let reg_val1A = self.registers[r2 as usize* 2];
-                let reg_val1B = self.registers[(r2 as usize + 1) * 2];
-                let reg_val1  = ((reg_val1A as u16) << 8) | reg_val1B as u16;
+                let reg_val_a1 = self.registers[r2 as usize * 2];
+                let reg_val_b1 = self.registers[(r2 as usize * 2) + 1];
+                let reg_val1  = ((reg_val_b1 as u16) << 8) | reg_val_a1 as u16;
 
-                self.set_register("acc", reg_val0 + reg_val1);
+                self.set_register("acc", reg_val0 + reg_val1).unwrap();
                 Ok(())
 
             },
