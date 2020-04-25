@@ -8,7 +8,7 @@ pub struct Memory {
 impl Memory {
     // create a new memory buffer by passing its size, in bytes.
     pub fn new(memsize: usize) -> Self {
-        let mut buf: Vec<u8> = vec![0; memsize];
+        let buf: Vec<u8> = vec![0; memsize];
         Memory {
             membuffer: buf,
         }

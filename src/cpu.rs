@@ -4,7 +4,7 @@ use crate::memory::*;
 use crate::instructions::*;
 
 
-const REGISTERS: &'static [&'static str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"];
+const REGISTERS: &[&str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"];
 
 #[derive(Debug)]
 pub enum CPUError {
@@ -62,7 +62,6 @@ impl CPU {
     fn set_register(&mut self, name: &str, value: u16) -> Result<(), CPUError> {
         match self.reg_map.get(name) {
             Some(address_ref) => {
-                println!("Value: 0x{:04x}", value);
                 // the value being set is 16 bits long, while each entry in our registers array is 8 bits long
                 // as each register spans two 8 bit values, we need to break down our 16 bit value into two 8 bit values.
                 let [byte0, byte1]: [u8; 2] = value.to_ne_bytes();
@@ -105,8 +104,6 @@ impl CPU {
                 match second_inst {
                     Ok(instruction1) => {
                         let inst1 = instruction1;
-                        println!("First instruction: 0x{:04x}", inst0);
-                        println!("Second instruction: 0x{:04x}", inst1);
                         let instruction = ((inst0 as u16) << 8) | inst1 as u16;
                         Ok(instruction)
                     },
@@ -124,31 +121,52 @@ impl CPU {
     pub fn execute(&mut self, instruction: u8) -> Result<(), CPUError> {
         match instruction {
             // move a literal value into the r1 register
-            MOV_LIT_R1 => {
+            MOV_LIT_REG => {
                 let literal = self.fetch16();
                 match literal {
                     Ok(literal) => {
-                        self.set_register("r1", literal).unwrap();
+                        let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                        let [byte0, byte1] = literal.to_ne_bytes();
+                        self.registers[register as usize] = byte0;
+                        self.registers[register as usize + 1] = byte1;
                         Ok(())
                     }
                     Err(_) => Err(CPUError::ExecutionFailure)
                 }
             },
-            MOV_LIT_R2 => {
-                let literal = self.fetch16();
-                match literal {
-                    Ok(literal) => {
-                        self.set_register("r2", literal).unwrap();
-                        Ok(())
-                    }
-                    Err(_) => Err(CPUError::ExecutionFailure)
-                }
+            MOV_REG_REG => {
+                let from_register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let to_register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let byte0 = self.registers[from_register as usize];
+                let byte1 = self.registers[from_register as usize + 1];
+                self.registers[to_register as usize] = byte0;
+                self.registers[to_register as usize + 1] = byte1;
+                Ok(())
             },
+            MOV_REG_MEM => {
+                let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let address = self.fetch16().unwrap();
+                let byte0 = self.registers[register as usize];
+                let byte1 = self.registers[register as usize + 1];
+                self.memory[address as usize] = byte0;
+                self.memory[address as usize + 1] = byte1;
+                Ok(())
+            },
+            MOV_MEM_REG => {
+                let address = self.fetch16().unwrap();
+                let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let byte0 = self.memory[address as usize];
+                let byte1 = self.memory[address as usize + 1];
+                self.registers[register as usize] = byte0;
+                self.registers[register as usize + 1] = byte1;
+                Ok(())
+            }
             ADD_REG_REG => {
-                let r1 = self.fetch().unwrap();
-                let r2 = self.fetch().unwrap();
+                let r1 = self.fetch().unwrap(); // the result is the index of r1 in the registers array
+                let r2 = self.fetch().unwrap(); // index of r2 in the registers array
                 let reg_val_a0 = self.registers[r1 as usize * 2];
                 let reg_val_b0 = self.registers[(r1 as usize * 2) + 1];
+                // stich together the two to get our final value, while factoring in endianness
                 let reg_val0  = ((reg_val_b0 as u16) << 8) | reg_val_a0 as u16;
 
                 let reg_val_a1 = self.registers[r2 as usize * 2];
@@ -172,6 +190,6 @@ impl CPU {
         for reg_name in &self.register_names {
             println!("{}:\t0x{:04x}", reg_name, self.get_register(reg_name).unwrap());
         }
-        println!("")
+        println!()
     }
 }
