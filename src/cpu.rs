@@ -8,6 +8,7 @@ const REGISTERS: &[&str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r
 
 #[derive(Debug)]
 pub enum CPUError {
+    LoadFailure,
     InvalidRegister,
     FetchFailure,
     ExecutionFailure,
@@ -42,7 +43,7 @@ impl CPU {
         }
     }
 
-    fn get_register(&self, name: &str) -> Result<u16, CPUError> {
+    pub fn get_register(&self, name: &str) -> Result<u16, CPUError> {
         match self.reg_map.get(name) {
             Some(address_ref) => {
                 // here we have address_ref = the offset from the start of the reg_map
@@ -59,7 +60,7 @@ impl CPU {
         }
     }
 
-    fn set_register(&mut self, name: &str, value: u16) -> Result<(), CPUError> {
+    pub fn set_register(&mut self, name: &str, value: u16) -> Result<(), CPUError> {
         match self.reg_map.get(name) {
             Some(address_ref) => {
                 // the value being set is 16 bits long, while each entry in our registers array is 8 bits long
@@ -77,7 +78,11 @@ impl CPU {
         }
     }
 
-    pub fn fetch(&mut self) -> Result<u8, CPUError> {
+    fn get_register_index(&mut self) -> Result<u8, CPUError> {
+        Ok((self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8)
+    }
+
+    fn fetch(&mut self) -> Result<u8, CPUError> {
         // fetch looks into the Instruction Pointer's address and from there, 
         // gets the value in the pointed to register's first byte
         let instruction_addr = self.get_register("ip");     // get_register returns a 16bit address. We need 8 bits to referece our memory
@@ -93,7 +98,7 @@ impl CPU {
         }
     }
 
-    pub fn fetch16(&mut self) -> Result<u16, CPUError> {
+    fn fetch16(&mut self) -> Result<u16, CPUError> {
         // fetch16 looks into the Instruction Pointer's address and from there, 
         // gets the value in the pointed to register.
         let first_inst = self.fetch();
@@ -118,15 +123,15 @@ impl CPU {
         }
     }
 
-    pub fn execute(&mut self, instruction: u8) -> Result<(), CPUError> {
+    fn execute(&mut self, instruction: u8) -> Result<(), CPUError> {
         match instruction {
             // move a literal value into the r1 register
             MOV_LIT_REG => {
                 let literal = self.fetch16();
                 match literal {
                     Ok(literal) => {
-                        let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
-                        let [byte0, byte1] = literal.to_ne_bytes();
+                        let register = self.get_register_index().unwrap();
+                        let [byte0, byte1] = literal.to_le_bytes();
                         self.registers[register as usize] = byte0;
                         self.registers[register as usize + 1] = byte1;
                         Ok(())
@@ -135,8 +140,8 @@ impl CPU {
                 }
             },
             MOV_REG_REG => {
-                let from_register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
-                let to_register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let from_register = self.get_register_index().unwrap();
+                let to_register = self.get_register_index().unwrap();
                 let byte0 = self.registers[from_register as usize];
                 let byte1 = self.registers[from_register as usize + 1];
                 self.registers[to_register as usize] = byte0;
@@ -144,7 +149,7 @@ impl CPU {
                 Ok(())
             },
             MOV_REG_MEM => {
-                let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let register =self.get_register_index().unwrap();
                 let address = self.fetch16().unwrap();
                 let byte0 = self.registers[register as usize];
                 let byte1 = self.registers[register as usize + 1];
@@ -154,13 +159,22 @@ impl CPU {
             },
             MOV_MEM_REG => {
                 let address = self.fetch16().unwrap();
-                let register = (self.fetch().unwrap() % self.register_names.len() as u8) * 2 as u8;
+                let register = self.get_register_index().unwrap();
                 let byte0 = self.memory[address as usize];
                 let byte1 = self.memory[address as usize + 1];
                 self.registers[register as usize] = byte0;
                 self.registers[register as usize + 1] = byte1;
                 Ok(())
-            }
+            },
+            JMP_NEQ => {
+                let value = self.fetch16().unwrap();
+                let address = self.fetch16().unwrap();
+
+                if value != self.get_register("acc").unwrap() {
+                    self.set_register("ip", address);
+                }
+                Ok(())
+            },
             ADD_REG_REG => {
                 let r1 = self.fetch().unwrap(); // the result is the index of r1 in the registers array
                 let r2 = self.fetch().unwrap(); // index of r2 in the registers array
@@ -179,6 +193,11 @@ impl CPU {
             },
             _ => Err(CPUError::InvalidInstruction)
         }
+    }
+
+    pub fn load(&mut self, index: usize, value: u8) -> Result<(), CPUError> {
+        self.memory[index] = value;
+        Ok(())
     }
 
     pub fn step(&mut self) -> Result<(), CPUError> {
