@@ -1,18 +1,26 @@
+#[allow(dead_code)]
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
 
 use crate::memory::*;
 use crate::instructions::*;
 
-#[allow(dead_code)]
+use thiserror::Error;
 
-const REGISTERS: &[&str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"];
+const REGISTERS: &[&str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "sp", "fp"];
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CPUError {
+    #[error("Unable to load value into memory")]
     LoadFailure,
+    #[error("The provided register is invalid")]
     InvalidRegister,
+    #[error("Fetch failed")]
     FetchFailure,
+    #[error("Execution failed")]
     ExecutionFailure,
+    #[error("The provided instructtion is not supported by this virtual machine")]
     InvalidInstruction
 }
 
