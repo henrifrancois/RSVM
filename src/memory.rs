@@ -13,6 +13,10 @@ impl Memory {
             membuffer: buf,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.membuffer.len()
+    }
 }
 
 impl Index<usize> for Memory {

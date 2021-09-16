@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::memory::*;
 use crate::instructions::*;
 
+#[allow(dead_code)]
 
 const REGISTERS: &[&str] = &["ip", "acc", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"];
 
@@ -27,8 +28,8 @@ impl CPU {
     pub fn new(memory_item: Memory) -> Self {
         let mut aggr: HashMap<&'static str, u8> = HashMap::new();
         let mut offsets: Vec<u8> = Vec::new();
-        let memsize = REGISTERS.to_vec().len() * 2;
-        for i in 0..REGISTERS.to_vec().len() + 1 {
+        let memsize = REGISTERS.len() * 2;
+        for i in 0..REGISTERS.len() + 1 {
             offsets.push(i as u8 * 2);
         }
         let pairs: Vec<_> = REGISTERS.iter().zip(offsets.iter()).collect();
@@ -53,10 +54,8 @@ impl CPU {
                 let byte1 = self.registers[register_start_address + 1];
                 let register = ((byte1 as u16) << 8) | byte0 as u16;
                 Ok(register)
-            }
-            None => {
-                Err(CPUError::InvalidRegister)
-            }
+            },
+            None => Err(CPUError::InvalidRegister)
         }
     }
 
@@ -71,10 +70,9 @@ impl CPU {
                 self.registers[(*address_ref) as usize] = byte0;
                 self.registers[(*address_ref) as usize + 1] = byte1;
                 Ok(())
-            }
-            None => {
-                Err(CPUError::InvalidRegister)
-            }
+            },
+            None => Err(CPUError::InvalidRegister)
+            
         }
     }
 
@@ -93,7 +91,7 @@ impl CPU {
                 let instruction = self.memory[byte0 as usize];
                 self.set_register("ip", address + 1).unwrap();
                 Ok(instruction)
-            }
+            },
             Err(_) => Err(CPUError::FetchFailure)
         }
     }
@@ -117,9 +115,7 @@ impl CPU {
                     }
                 }
             },
-            Err(_) => {
-                Err(CPUError::FetchFailure)
-            }
+            Err(_) => Err(CPUError::FetchFailure)
         }
     }
 
@@ -135,7 +131,7 @@ impl CPU {
                         self.registers[register as usize] = byte0;
                         self.registers[register as usize + 1] = byte1;
                         Ok(())
-                    }
+                    },
                     Err(_) => Err(CPUError::ExecutionFailure)
                 }
             },
@@ -196,8 +192,12 @@ impl CPU {
     }
 
     pub fn load(&mut self, index: usize, value: u8) -> Result<(), CPUError> {
-        self.memory[index] = value;
-        Ok(())
+        if index > self.memory.len() {
+            Err(CPUError::LoadFailure)
+        } else {
+            self.memory[index] = value;
+            Ok(())    
+        }
     }
 
     pub fn step(&mut self) -> Result<(), CPUError> {
